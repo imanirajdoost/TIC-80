@@ -22,6 +22,9 @@
 
 #include <string.h>
 #include <stdio.h>
+#include <stdlib.h>
+#include <errno.h>
+#include <limits.h>
 #include <SDL.h>
 #include <tic80.h>
 
@@ -42,6 +45,8 @@ static struct
     SDL_mutex *mutex;
     bool quit;
 } state = {0};
+
+static s32 frameLimit = -1;
 
 static void onExit()
 {
@@ -122,10 +127,11 @@ s32 runCart(void* cart, s32 size)
 
         const u64 Delta = SDL_GetPerformanceFrequency() / TIC80_FRAMERATE;
         u64 nextTick = SDL_GetPerformanceCounter();
+        s32 frames = 0;
 
         SDL_PauseAudioDevice(audioDevice, 0);
 
-        while(!state.quit)
+        while(!state.quit && (frameLimit < 0 || frames < frameLimit))
         {
             SDL_Event event;
 
@@ -175,6 +181,7 @@ s32 runCart(void* cart, s32 size)
             SDL_LockMutex(state.mutex);
             {
                 tic80_tick(tic, input, tic_sys_counter_get, tic_sys_freq_get);
+                frames++;
             }
             SDL_UnlockMutex(state.mutex);
 
@@ -230,20 +237,54 @@ s32 runCart(void* cart, s32 size)
 s32 main(s32 argc, char **argv)
 {
     const char* executable = argc > 0 ? argv[0] : TIC80_EXECUTABLE_NAME;
-    const char* input = (argc > 1) ? argv[1] : TIC80_DEFAULT_CART;
+    const char* input = NULL;
 
-    // Display help message.
-    if(strcmp(input, "--help") == 0 || strcmp(input, "-h") == 0)
+    for(s32 i = 1; i < argc; i++)
     {
-        printf("Usage: %s <file>\n", executable);
-        return 0;
+        if(strcmp(argv[i], "--help") == 0 || strcmp(argv[i], "-h") == 0)
+        {
+            printf("Usage: %s [--during N] [<file>]\n", executable);
+            return 0;
+        }
+        else if(strcmp(argv[i], "--during") == 0)
+        {
+            char* end = NULL;
+            long value;
+
+            if(i + 1 >= argc)
+            {
+                fprintf(stderr, "Error: --during requires a non-negative frame count.\n");
+                return 1;
+            }
+
+            errno = 0;
+            value = strtol(argv[++i], &end, 10);
+            if(errno || end == argv[i] || *end != '\0' || value < 0 || value > INT_MAX)
+            {
+                fprintf(stderr, "Error: invalid frame count for --during: %s\n", argv[i]);
+                return 1;
+            }
+            frameLimit = (s32)value;
+        }
+        else if(!input)
+        {
+            input = argv[i];
+        }
+        else
+        {
+            fprintf(stderr, "Error: unexpected argument: %s\n", argv[i]);
+            return 1;
+        }
     }
+
+    if(!input)
+        input = TIC80_DEFAULT_CART;
 
     // Load the given file.
     FILE* file = fopen(input, "rb");
     if(!file)
     {
-        fprintf(stderr, "Error: Could not load %s.\n\nUsage: %s <file>\n", input, argv[0]);
+        fprintf(stderr, "Error: Could not load %s.\n\nUsage: %s [--during N] [<file>]\n", input, executable);
         return 1;
     }
 

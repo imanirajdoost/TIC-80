@@ -43,3 +43,8 @@ The README.md file pointed to `https://tic80.com/play` -> In the website, I look
 Set TIC80_DUMMY_INPUTS=1 to generate dummy input.
 
 Added patch to the input handling of the main.c file.
+
+## Exercise 4
+I added limit to the game loop and added the parsing of the `--during` command.
+
+Example command to quit after 100 frames : `player-sdl.exe path\to\your-cart.tic --during 100`
