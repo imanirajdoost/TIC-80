@@ -39,3 +39,7 @@ The collection is in testdata/tic80-top50, with the inventory in testdata/tic80-
 
 The README.md file pointed to `https://tic80.com/play` -> In the website, I looked at HTML code of `https://tic80.com/play/games/top`. Each card links to `/dev/<author>/<slug>`, and the **SHOW MORE** link exposes a `?page=1&partial=1` URL. The catalog of games is `https://tic80.com/js/catalog.js`. Then I opened a game's detail page and inspect its links. The `.tic` cartridge URL is like this: `/cart/<id>/<slug>.tic`. I used PowerShell's `Invoke-WebRequest` to download and `Get-FileHash -Algorithm MD5` for checksums. In TIC-80, enter `help commands` in the console; the command help list is defined by `HELP_CMD_LIST` in `src/studio/screens/console.c`.
 
+## Exercise 3
+Set TIC80_DUMMY_INPUTS=1 to generate dummy input.
+
+Added patch to the input handling of the main.c file.

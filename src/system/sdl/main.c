@@ -103,6 +103,7 @@ static struct
 {
     Studio* studio;
     tic80_input input;
+    bool dummyInputs;
 
     SDL_Window* window;
 
@@ -205,6 +206,48 @@ static struct
 }
 #endif
 ;
+
+static int monkey_rand(int n)
+{
+    static unsigned int rnd = 0x2026;
+    rnd ^= rnd << 7;
+    rnd ^= rnd >> 9;
+    rnd ^= rnd << 8;
+    return (int)(rnd % (unsigned int)n);
+}
+
+static void get_monkey_inputs(char udlrabxy[8])
+{
+    static struct
+    {
+        int delay;
+        char up, down, left, right, a, b, x, y;
+    } state;
+
+    if(state.delay)
+        state.delay--;
+    else
+    {
+        state.up = monkey_rand(10) < 6;
+        state.down = !state.up && monkey_rand(10) < 4;
+        state.left = monkey_rand(10) < 2;
+        state.right = !state.left && monkey_rand(10) < 7;
+        state.a = monkey_rand(10) < 6;
+        state.b = monkey_rand(10) < 2;
+        state.x = monkey_rand(10) < 3;
+        state.y = monkey_rand(10) < 2;
+        state.delay = monkey_rand(20) + 10;
+    }
+
+    udlrabxy[0] = state.up;
+    udlrabxy[1] = state.down;
+    udlrabxy[2] = state.left;
+    udlrabxy[3] = state.right;
+    udlrabxy[4] = state.a;
+    udlrabxy[5] = state.b;
+    udlrabxy[6] = state.x;
+    udlrabxy[7] = state.y;
+}
 
 #if defined(__RPI__)
 
@@ -1031,6 +1074,20 @@ static void processGamepad()
         input->gamepads.data |= platform.gamepad.touch.joystick.data;
 #endif
         input->gamepads.data |= platform.gamepad.joystick.data;
+
+        if(platform.dummyInputs)
+        {
+            char buttons[8];
+            get_monkey_inputs(buttons);
+            input->gamepads.first.up = buttons[0];
+            input->gamepads.first.down = buttons[1];
+            input->gamepads.first.left = buttons[2];
+            input->gamepads.first.right = buttons[3];
+            input->gamepads.first.a = buttons[4];
+            input->gamepads.first.b = buttons[5];
+            input->gamepads.first.x = buttons[6];
+            input->gamepads.first.y = buttons[7];
+        }
     }
 }
 
@@ -1936,6 +1993,9 @@ s32 determineMaximumScale()
 
 static s32 start(s32 argc, char **argv, const char* folder)
 {
+    const char* dummyInputs = getenv("TIC80_DUMMY_INPUTS");
+    platform.dummyInputs = dummyInputs && dummyInputs[0] && strcmp(dummyInputs, "0") != 0;
+
 #if defined(__MACOSX__)
     SDL_SetHint(SDL_HINT_RENDER_DRIVER, "opengl");
 #endif
