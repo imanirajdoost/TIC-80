@@ -152,6 +152,7 @@ build/bin/bin2txt
 build/bin/sdl-renderer
 build/bin/tic80
 out/
+test-results/
 build/bin/
 build/vendor/curl/libcurl.pc
 build/vendor/curl/curl-config

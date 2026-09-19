@@ -50,6 +50,53 @@ static struct
 
 static s32 frameLimit = -1;
 
+/*
+ * The studio has a deterministic input generator for unattended runs.  Keep
+ * the standalone player compatible with it so headless integration tests can
+ * exercise gameplay code instead of only rendering an idle cart.
+ */
+static int dummy_input_rand(int n)
+{
+    static unsigned int random = 0x2026;
+    random ^= random << 7;
+    random ^= random >> 9;
+    random ^= random << 8;
+    return (int)(random % (unsigned int)n);
+}
+
+static void get_dummy_inputs(char buttons[8])
+{
+    static struct
+    {
+        int delay;
+        char up, down, left, right, a, b, x, y;
+    } state;
+
+    if(state.delay)
+        state.delay--;
+    else
+    {
+        state.up = dummy_input_rand(10) < 6;
+        state.down = !state.up && dummy_input_rand(10) < 4;
+        state.left = dummy_input_rand(10) < 2;
+        state.right = !state.left && dummy_input_rand(10) < 7;
+        state.a = dummy_input_rand(10) < 6;
+        state.b = dummy_input_rand(10) < 2;
+        state.x = dummy_input_rand(10) < 3;
+        state.y = dummy_input_rand(10) < 2;
+        state.delay = dummy_input_rand(20) + 10;
+    }
+
+    buttons[0] = state.up;
+    buttons[1] = state.down;
+    buttons[2] = state.left;
+    buttons[3] = state.right;
+    buttons[4] = state.a;
+    buttons[5] = state.b;
+    buttons[6] = state.x;
+    buttons[7] = state.y;
+}
+
 static void onExit()
 {
     state.quit = true;
@@ -88,6 +135,8 @@ static void audioCallback(void* userdata, u8* stream, s32 len)
 s32 runCart(void* cart, s32 size, const char* vramCrcPath)
 {
     s32 output = 0;
+    const char* dummyInputEnv = getenv("TIC80_DUMMY_INPUTS");
+    const bool dummyInputs = dummyInputEnv && dummyInputEnv[0] && strcmp(dummyInputEnv, "0") != 0;
 
     tic80_input input;
     SDL_memset(&input, 0, sizeof input);
@@ -162,6 +211,8 @@ s32 runCart(void* cart, s32 size, const char* vramCrcPath)
 
         while(!state.quit && (frameLimit < 0 || frames < frameLimit))
         {
+            input.gamepads.data = 0;
+
             if(renderEnabled)
             {
                 SDL_Event event;
@@ -183,7 +234,6 @@ s32 runCart(void* cart, s32 size, const char* vramCrcPath)
                     }
                 }
 
-                input.gamepads.data = 0;
                 const uint8_t* keyboard = SDL_GetKeyboardState(NULL);
 
                 static const SDL_Scancode Keys[] =
@@ -229,6 +279,20 @@ s32 runCart(void* cart, s32 size, const char* vramCrcPath)
                         state.quit = true;
                     }
                 }
+            }
+
+            if(dummyInputs)
+            {
+                char buttons[8];
+                get_dummy_inputs(buttons);
+                input.gamepads.first.up = buttons[0];
+                input.gamepads.first.down = buttons[1];
+                input.gamepads.first.left = buttons[2];
+                input.gamepads.first.right = buttons[3];
+                input.gamepads.first.a = buttons[4];
+                input.gamepads.first.b = buttons[5];
+                input.gamepads.first.x = buttons[6];
+                input.gamepads.first.y = buttons[7];
             }
             if(state.mutex)
                 SDL_UnlockMutex(state.mutex);

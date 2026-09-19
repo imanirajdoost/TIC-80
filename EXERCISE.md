@@ -52,3 +52,27 @@ Example command to quit after 100 frames : `player-sdl.exe path\to\your-cart.tic
 ## Exercise 5
 player-sdl now accepts --vram-crc <output.txt>. It skips the first 200 frames.
 This was a little more complicated, I iterated with AI to understand what can be done.
+
+## Exercise 6: automated one-minute game sweep
+
+Code for build:
+`cmake --build build-dummy --target player-sdl --parallel 4`
+
+Running the tests:
+`ctest --test-dir build-dummy --output-on-failure`
+
+Running every game for 1 minute:
+`.\tools\run_top_tic80_games.ps1`
+
+This powershell script runs `player-sdl.exe --during 3600 --vram-crc <output> <game.tic>`
+which runs the games for 3600 frames.
+
+There is also a deterministic dummy input in Player.c file.
+The tests capture
+summary.json
+results.csv
+analysis.md
+VRAM checksum files
+stdout/stderr logs
+
+The game passes tests when all checksum frames pass (200 frames of startup is not counted).
