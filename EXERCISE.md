@@ -82,3 +82,9 @@ The game passes tests when all checksum frames pass (200 frames of startup is no
 Executed tests in headless mode. Instead of rendering each frame, I advance the time headlessly, so there is no SDL delay.
 The tests run about 10 times faster now.
 The command that does this is `--vram-crc`, same as last exercise.
+
+## Exercise 8
+
+The machine tests were very determinsitic (deterministic inputs and tests); To make it more deterministic I used a fixed 2000-01-01 epoch advancing at 60 Hz.
+
+Test run between two runs gave 100% success and exactly the same outputs for deterministic behaviour.

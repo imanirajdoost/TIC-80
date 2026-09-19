@@ -187,6 +187,11 @@ typedef struct
 TIC80_API tic80* tic80_create(s32 samplerate, tic80_pixel_color_format format);
 TIC80_API void tic80_load(tic80* tic, void* cart, s32 size);
 TIC80_API void tic80_tick(tic80* tic, tic80_input input, u64 (*counter)(), u64 (*freq)());
+// The optional timestamp callback supplies tstamp(). Pass NULL to retain the
+// host wall clock used by tic80_tick(). It exists for deterministic hosts and
+// test runners that need every observable machine input under their control.
+TIC80_API void tic80_tick_with_timestamp(tic80* tic, tic80_input input,
+    u64 (*counter)(), u64 (*freq)(), s32 (*timestamp)());
 TIC80_API void tic80_sound(tic80* tic);
 TIC80_API void tic80_delete(tic80* tic);
 

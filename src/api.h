@@ -34,6 +34,7 @@ typedef void(*ErrorOutput)(void*, const char*);
 typedef void(*ExitCallback)(void*);
 typedef u64(*CounterCallback)(void*);
 typedef u64(*FreqCallback)(void*);
+typedef s32(*TimestampCallback)(void*);
 
 typedef struct
 {
@@ -43,6 +44,8 @@ typedef struct
 
     CounterCallback counter;
     FreqCallback freq;
+    // NULL preserves the normal wall-clock tstamp() behaviour.
+    TimestampCallback timestamp;
     u64 start;
 
     void* data;

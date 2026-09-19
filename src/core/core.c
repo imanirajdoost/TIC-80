@@ -244,7 +244,9 @@ double tic_api_time(tic_mem* memory)
 s32 tic_api_tstamp(tic_mem* memory)
 {
     tic_core* core = (tic_core*)memory;
-    return (s32)time(NULL);
+    return core->data->timestamp
+        ? core->data->timestamp(core->data->data)
+        : (s32)time(NULL);
 }
 
 static void updateSaveid(tic_mem* memory)

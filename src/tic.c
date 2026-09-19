@@ -101,7 +101,8 @@ TIC80_API void tic80_load(tic80* tic, void* cart, s32 size)
 #endif
 }
 
-TIC80_API void tic80_tick(tic80* tic, tic80_input input, CounterCallback counter, FreqCallback freq)
+TIC80_API void tic80_tick_with_timestamp(tic80* tic, tic80_input input,
+    CounterCallback counter, FreqCallback freq, TimestampCallback timestamp)
 {
     tic_mem* mem = (tic_mem*)tic;
 
@@ -115,13 +116,19 @@ TIC80_API void tic80_tick(tic80* tic, tic80_input input, CounterCallback counter
         .data = tic,
         .start = 0,
         .counter = counter,
-        .freq = freq
+        .freq = freq,
+        .timestamp = timestamp,
     };
 
     tic_core_tick_start(mem);
     tic_core_tick(mem, &tickData);
     tic_core_tick_end(mem);
     tic_core_blit(mem);
+}
+
+TIC80_API void tic80_tick(tic80* tic, tic80_input input, CounterCallback counter, FreqCallback freq)
+{
+    tic80_tick_with_timestamp(tic, input, counter, freq, NULL);
 }
 
 TIC80_API void tic80_sound(tic80* tic)

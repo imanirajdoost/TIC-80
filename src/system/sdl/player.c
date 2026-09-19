@@ -40,6 +40,7 @@
 #define TIC80_WINDOW_TITLE "TIC-80"
 #define TIC80_DEFAULT_CART "cart.tic"
 #define TIC80_EXECUTABLE_NAME "player-sdl"
+#define TIC80_DETERMINISTIC_EPOCH 946684800 // 2000-01-01T00:00:00Z
 
 static struct
 {
@@ -128,6 +129,17 @@ static u64 tic_fast_forward_counter_get()
 static u64 tic_fast_forward_freq_get()
 {
     return TIC80_FRAMERATE;
+}
+
+/*
+ * tstamp() is an observable part of the TIC machine.  Use an epoch that moves
+ * with the virtual clock in checksum mode, rather than leaking the host's
+ * wall clock into a replay.  Normal interactive player runs still pass NULL
+ * for this callback and therefore retain their existing wall-clock semantics.
+ */
+static s32 tic_fast_forward_timestamp_get()
+{
+    return TIC80_DETERMINISTIC_EPOCH + (s32)(state.fastForwardCounter / TIC80_FRAMERATE);
 }
 
 static void audioCallback(void* userdata, u8* stream, s32 len)
@@ -281,9 +293,10 @@ s32 runCart(void* cart, s32 size, const char* vramCrcPath)
             if(state.mutex)
                 SDL_LockMutex(state.mutex);
             {
-                tic80_tick(tic, input,
+                tic80_tick_with_timestamp(tic, input,
                     fastForward ? tic_fast_forward_counter_get : tic_sys_counter_get,
-                    fastForward ? tic_fast_forward_freq_get : tic_sys_freq_get);
+                    fastForward ? tic_fast_forward_freq_get : tic_sys_freq_get,
+                    fastForward ? tic_fast_forward_timestamp_get : NULL);
                 frames++;
                 if(fastForward)
                     state.fastForwardCounter++;
