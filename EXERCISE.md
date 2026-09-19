@@ -48,3 +48,7 @@ Added patch to the input handling of the main.c file.
 I added limit to the game loop and added the parsing of the `--during` command.
 
 Example command to quit after 100 frames : `player-sdl.exe path\to\your-cart.tic --during 100`
+
+## Exercise 5
+player-sdl now accepts --vram-crc <output.txt>. It skips the first 200 frames.
+This was a little more complicated, I iterated with AI to understand what can be done.

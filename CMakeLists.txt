@@ -54,6 +54,7 @@ option(BUILD_TOUCH_INPUT "Build with touch input support" ${BUILD_TOUCH_INPUT_DE
 option(BUILD_NO_OPTIMIZATION "Build without optimizations for debugging" OFF)
 option(BUILD_ASAN_DEBUG "Build with AddressSanitizer" OFF)
 option(BUILD_WITH_ZLIB "Build with zlib linked" ON)
+option(TIC80_BUILD_TESTS "Build TIC-80 unit tests" OFF)
 option(TIC80_TARGET "Target binary suffix")
 option(PREFER_SYSTEM_LIBRARIES "Prefer link with system libraries" OFF)
 
@@ -195,3 +196,14 @@ include(cmake/n3ds.cmake)
 include(cmake/nswitch.cmake)
 
 include(cmake/install.cmake)
+
+if(TIC80_BUILD_TESTS)
+    enable_testing()
+
+    add_executable(vram-crc-test tests/vram_crc_test.c)
+    target_include_directories(vram-crc-test PRIVATE
+        ${CMAKE_SOURCE_DIR}/include
+        ${CMAKE_SOURCE_DIR}/src
+        ${CMAKE_SOURCE_DIR}/src/system/sdl)
+    add_test(NAME vram-crc COMMAND vram-crc-test)
+endif()

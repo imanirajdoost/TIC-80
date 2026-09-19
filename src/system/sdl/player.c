@@ -27,6 +27,8 @@
 #include <limits.h>
 #include <SDL.h>
 #include <tic80.h>
+#include "core/core.h"
+#include "vram_crc.h"
 
 #if defined(__APPLE__)
 # if MAC_OS_X_VERSION_MIN_REQUIRED < 1060
@@ -83,16 +85,26 @@ static void audioCallback(void* userdata, u8* stream, s32 len)
     SDL_UnlockMutex(state.mutex);
 }
 
-s32 runCart(void* cart, s32 size)
+s32 runCart(void* cart, s32 size, const char* vramCrcPath)
 {
     s32 output = 0;
 
     tic80_input input;
     SDL_memset(&input, 0, sizeof input);
 
+    FILE* vramCrcFile = NULL;
+    if(vramCrcPath)
+    {
+        vramCrcFile = fopen(vramCrcPath, "w");
+        if(!vramCrcFile)
+        {
+            fprintf(stderr, "Error: Could not open VRAM checksum output %s.\n", vramCrcPath);
+            SDL_free(cart);
+            return 1;
+        }
+    }
+
     tic80* tic = tic80_create(TIC80_SAMPLERATE, TIC80_PIXEL_COLOR_RGBA8888);
-    tic->callback.exit = onExit;
-    tic80_load(tic, cart, size);
 
     if(!tic)
     {
@@ -101,58 +113,76 @@ s32 runCart(void* cart, s32 size)
     }
     else
     {
-        SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO);
+        tic->callback.exit = onExit;
+        tic80_load(tic, cart, size);
 
-        SDL_Window* window = SDL_CreateWindow(TIC80_WINDOW_TITLE, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, TIC80_FULLWIDTH * TIC80_WINDOW_SCALE, TIC80_FULLHEIGHT * TIC80_WINDOW_SCALE, SDL_WINDOW_SHOWN | SDL_WINDOW_RESIZABLE);
-        SDL_Renderer* renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED);
-        SDL_Texture* texture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_ABGR8888, SDL_TEXTUREACCESS_STREAMING, TIC80_FULLWIDTH, TIC80_FULLHEIGHT);
+        const bool renderEnabled = vramCrcFile == NULL;
+        SDL_Window* window = NULL;
+        SDL_Renderer* renderer = NULL;
+        SDL_Texture* texture = NULL;
         SDL_AudioDeviceID audioDevice = 0;
         SDL_AudioSpec audioSpec;
 
+        if(renderEnabled)
         {
-            state.mutex = SDL_CreateMutex();
+            SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO);
 
-            SDL_AudioSpec want =
+            window = SDL_CreateWindow(TIC80_WINDOW_TITLE, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, TIC80_FULLWIDTH * TIC80_WINDOW_SCALE, TIC80_FULLHEIGHT * TIC80_WINDOW_SCALE, SDL_WINDOW_SHOWN | SDL_WINDOW_RESIZABLE);
+            renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED);
+            texture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_ABGR8888, SDL_TEXTUREACCESS_STREAMING, TIC80_FULLWIDTH, TIC80_FULLHEIGHT);
+
+            if(renderEnabled)
             {
-                .freq = TIC80_SAMPLERATE,
-                .format = AUDIO_S16,
-                .channels = TIC80_SAMPLE_CHANNELS,
-                .callback = audioCallback,
-                .samples = 1024,
-                .userdata = tic,
-            };
+                state.mutex = SDL_CreateMutex();
 
-            audioDevice = SDL_OpenAudioDevice(NULL, 0, &want, &audioSpec, 0);
+                SDL_AudioSpec want =
+                {
+                    .freq = TIC80_SAMPLERATE,
+                    .format = AUDIO_S16,
+                    .channels = TIC80_SAMPLE_CHANNELS,
+                    .callback = audioCallback,
+                    .samples = 1024,
+                    .userdata = tic,
+                };
+
+                audioDevice = SDL_OpenAudioDevice(NULL, 0, &want, &audioSpec, 0);
+            }
+        }
+        else
+        {
+            SDL_Init(SDL_INIT_TIMER);
         }
 
         const u64 Delta = SDL_GetPerformanceFrequency() / TIC80_FRAMERATE;
         u64 nextTick = SDL_GetPerformanceCounter();
         s32 frames = 0;
 
-        SDL_PauseAudioDevice(audioDevice, 0);
+        if(audioDevice)
+            SDL_PauseAudioDevice(audioDevice, 0);
 
         while(!state.quit && (frameLimit < 0 || frames < frameLimit))
         {
-            SDL_Event event;
-
-            while(SDL_PollEvent(&event))
+            if(renderEnabled)
             {
-                switch(event.type)
+                SDL_Event event;
+
+                while(SDL_PollEvent(&event))
                 {
-                case SDL_QUIT:
-                    state.quit = true;
-                    break;
-                case SDL_KEYUP:
-                    // Quit when pressing the escape button.
-                    if(event.key.keysym.sym == SDLK_ESCAPE)
+                    switch(event.type)
                     {
+                    case SDL_QUIT:
                         state.quit = true;
+                        break;
+                    case SDL_KEYUP:
+                        // Quit when pressing the escape button.
+                        if(event.key.keysym.sym == SDLK_ESCAPE)
+                        {
+                            state.quit = true;
+                        }
+                        break;
                     }
-                    break;
                 }
-            }
 
-            {
                 input.gamepads.data = 0;
                 const uint8_t* keyboard = SDL_GetKeyboardState(NULL);
 
@@ -178,40 +208,61 @@ s32 runCart(void* cart, s32 size)
                 }
             }
 
-            SDL_LockMutex(state.mutex);
+            if(state.mutex)
+                SDL_LockMutex(state.mutex);
             {
                 tic80_tick(tic, input, tic_sys_counter_get, tic_sys_freq_get);
                 frames++;
-            }
-            SDL_UnlockMutex(state.mutex);
 
-            SDL_RenderClear(renderer);
-
-            {
-                void* pixels = NULL;
-                s32 pitch = 0;
-                SDL_Rect destination;
-                SDL_LockTexture(texture, NULL, &pixels, &pitch);
-                SDL_memcpy(pixels, tic->screen, pitch * TIC80_FULLHEIGHT);
-                SDL_UnlockTexture(texture);
-
-                // Render the image in the proper aspect ratio.
+                if(vramCrcFile && tic80_vram_crc_should_capture(frames))
                 {
-                    s32 windowWidth, windowHeight;
-                    SDL_GetWindowSize(window, &windowWidth, &windowHeight);
-                    float widthRatio = (float)windowWidth / TIC80_FULLWIDTH;
-                    float heightRatio = (float)windowHeight / TIC80_FULLHEIGHT;
-                    float optimalSize = widthRatio < heightRatio ? widthRatio : heightRatio;
-                    destination.w = (s32)(TIC80_FULLWIDTH * optimalSize);
-                    destination.h = (s32)(TIC80_FULLHEIGHT * optimalSize);
-                    destination.x = windowWidth / 2 - destination.w / 2;
-                    destination.y = windowHeight / 2 - destination.h / 2;
+                    const tic_core* core = (const tic_core*)tic;
+                    const u32 checksum = tic80_vram_crc32_mapped(
+                        &core->memory.ram->vram,
+                        &core->state.vbank.mem,
+                        core->state.vbank.id);
+
+                    if(fprintf(vramCrcFile, "%08x\n", (unsigned int)checksum) < 0)
+                    {
+                        fprintf(stderr, "Error: Failed writing VRAM checksum output %s.\n", vramCrcPath);
+                        output = 1;
+                        state.quit = true;
+                    }
+                }
+            }
+            if(state.mutex)
+                SDL_UnlockMutex(state.mutex);
+
+            if(renderEnabled)
+            {
+                SDL_RenderClear(renderer);
+
+                {
+                    void* pixels = NULL;
+                    s32 pitch = 0;
+                    SDL_Rect destination;
+                    SDL_LockTexture(texture, NULL, &pixels, &pitch);
+                    SDL_memcpy(pixels, tic->screen, pitch * TIC80_FULLHEIGHT);
+                    SDL_UnlockTexture(texture);
+
+                    // Render the image in the proper aspect ratio.
+                    {
+                        s32 windowWidth, windowHeight;
+                        SDL_GetWindowSize(window, &windowWidth, &windowHeight);
+                        float widthRatio = (float)windowWidth / TIC80_FULLWIDTH;
+                        float heightRatio = (float)windowHeight / TIC80_FULLHEIGHT;
+                        float optimalSize = widthRatio < heightRatio ? widthRatio : heightRatio;
+                        destination.w = (s32)(TIC80_FULLWIDTH * optimalSize);
+                        destination.h = (s32)(TIC80_FULLHEIGHT * optimalSize);
+                        destination.x = windowWidth / 2 - destination.w / 2;
+                        destination.y = windowHeight / 2 - destination.h / 2;
+                    }
+
+                    SDL_RenderCopy(renderer, texture, NULL, &destination);
                 }
 
-                SDL_RenderCopy(renderer, texture, NULL, &destination);
+                SDL_RenderPresent(renderer);
             }
-
-            SDL_RenderPresent(renderer);
 
             {
                 s64 delay = (nextTick += Delta) - SDL_GetPerformanceCounter();
@@ -223,11 +274,22 @@ s32 runCart(void* cart, s32 size)
 
         tic80_delete(tic);
 
-        SDL_CloseAudioDevice(audioDevice);
-        SDL_DestroyMutex(state.mutex);
-        SDL_DestroyTexture(texture);
-        SDL_DestroyRenderer(renderer);
-        SDL_DestroyWindow(window);
+        if(renderEnabled)
+        {
+            if(audioDevice)
+                SDL_CloseAudioDevice(audioDevice);
+            if(state.mutex)
+                SDL_DestroyMutex(state.mutex);
+            SDL_DestroyTexture(texture);
+            SDL_DestroyRenderer(renderer);
+            SDL_DestroyWindow(window);
+        }
+    }
+
+    if(vramCrcFile && fclose(vramCrcFile) != 0)
+    {
+        fprintf(stderr, "Error: Failed closing VRAM checksum output %s.\n", vramCrcPath);
+        output = 1;
     }
 
     SDL_free(cart);
@@ -238,12 +300,13 @@ s32 main(s32 argc, char **argv)
 {
     const char* executable = argc > 0 ? argv[0] : TIC80_EXECUTABLE_NAME;
     const char* input = NULL;
+    const char* vramCrcPath = NULL;
 
     for(s32 i = 1; i < argc; i++)
     {
         if(strcmp(argv[i], "--help") == 0 || strcmp(argv[i], "-h") == 0)
         {
-            printf("Usage: %s [--during N] [<file>]\n", executable);
+            printf("Usage: %s [--during N] [--vram-crc <output.txt>] [<file>]\n", executable);
             return 0;
         }
         else if(strcmp(argv[i], "--during") == 0)
@@ -266,6 +329,15 @@ s32 main(s32 argc, char **argv)
             }
             frameLimit = (s32)value;
         }
+        else if(strcmp(argv[i], "--vram-crc") == 0)
+        {
+            if(i + 1 >= argc)
+            {
+                fprintf(stderr, "Error: --vram-crc requires an output file.\n");
+                return 1;
+            }
+            vramCrcPath = argv[++i];
+        }
         else if(!input)
         {
             input = argv[i];
@@ -284,7 +356,7 @@ s32 main(s32 argc, char **argv)
     FILE* file = fopen(input, "rb");
     if(!file)
     {
-        fprintf(stderr, "Error: Could not load %s.\n\nUsage: %s [--during N] [<file>]\n", input, executable);
+        fprintf(stderr, "Error: Could not load %s.\n\nUsage: %s [--during N] [--vram-crc <output.txt>] [<file>]\n", input, executable);
         return 1;
     }
 
@@ -303,5 +375,5 @@ s32 main(s32 argc, char **argv)
         return 1;
     }
 
-    return runCart(cart, size);
+    return runCart(cart, size, vramCrcPath);
 }
