@@ -46,6 +46,7 @@ static struct
     s32 remaining;
     SDL_mutex *mutex;
     bool quit;
+    u64 fastForwardCounter;
 } state = {0};
 
 static s32 frameLimit = -1;
@@ -112,6 +113,23 @@ static u64 tic_sys_freq_get()
     return SDL_GetPerformanceFrequency();
 }
 
+/*
+ * Checksum capture is an automated-test mode: it has no window or audio
+ * device, so waiting for real time only makes the test suite slower.  Advance
+ * a virtual 60 Hz clock instead.  This keeps TIC's time() API aligned with
+ * the emulated frame count, rather than changing its behaviour to host CPU
+ * speed while running tests.
+ */
+static u64 tic_fast_forward_counter_get()
+{
+    return state.fastForwardCounter;
+}
+
+static u64 tic_fast_forward_freq_get()
+{
+    return TIC80_FRAMERATE;
+}
+
 static void audioCallback(void* userdata, u8* stream, s32 len)
 {
     SDL_LockMutex(state.mutex);
@@ -137,6 +155,7 @@ s32 runCart(void* cart, s32 size, const char* vramCrcPath)
     s32 output = 0;
     const char* dummyInputEnv = getenv("TIC80_DUMMY_INPUTS");
     const bool dummyInputs = dummyInputEnv && dummyInputEnv[0] && strcmp(dummyInputEnv, "0") != 0;
+    const bool fastForward = vramCrcPath != NULL;
 
     tic80_input input;
     SDL_memset(&input, 0, sizeof input);
@@ -165,7 +184,7 @@ s32 runCart(void* cart, s32 size, const char* vramCrcPath)
         tic->callback.exit = onExit;
         tic80_load(tic, cart, size);
 
-        const bool renderEnabled = vramCrcFile == NULL;
+        const bool renderEnabled = !fastForward;
         SDL_Window* window = NULL;
         SDL_Renderer* renderer = NULL;
         SDL_Texture* texture = NULL;
@@ -205,6 +224,7 @@ s32 runCart(void* cart, s32 size, const char* vramCrcPath)
         const u64 Delta = SDL_GetPerformanceFrequency() / TIC80_FRAMERATE;
         u64 nextTick = SDL_GetPerformanceCounter();
         s32 frames = 0;
+        state.fastForwardCounter = 0;
 
         if(audioDevice)
             SDL_PauseAudioDevice(audioDevice, 0);
@@ -261,8 +281,12 @@ s32 runCart(void* cart, s32 size, const char* vramCrcPath)
             if(state.mutex)
                 SDL_LockMutex(state.mutex);
             {
-                tic80_tick(tic, input, tic_sys_counter_get, tic_sys_freq_get);
+                tic80_tick(tic, input,
+                    fastForward ? tic_fast_forward_counter_get : tic_sys_counter_get,
+                    fastForward ? tic_fast_forward_freq_get : tic_sys_freq_get);
                 frames++;
+                if(fastForward)
+                    state.fastForwardCounter++;
 
                 if(vramCrcFile && tic80_vram_crc_should_capture(frames))
                 {
@@ -328,6 +352,7 @@ s32 runCart(void* cart, s32 size, const char* vramCrcPath)
                 SDL_RenderPresent(renderer);
             }
 
+            if(!fastForward)
             {
                 s64 delay = (nextTick += Delta) - SDL_GetPerformanceCounter();
 

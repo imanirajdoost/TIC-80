@@ -206,4 +206,17 @@ if(TIC80_BUILD_TESTS)
         ${CMAKE_SOURCE_DIR}/src
         ${CMAKE_SOURCE_DIR}/src/system/sdl)
     add_test(NAME vram-crc COMMAND vram-crc-test)
+
+    # The checksum player is the integration-test harness. It must retain the
+    # 200-frame warm-up contract while running without real-time pacing.
+    if(TARGET player-sdl)
+        add_test(NAME player-vram-crc-fast-forward
+            COMMAND ${CMAKE_COMMAND}
+                -DPLAYER=$<TARGET_FILE:player-sdl>
+                -DCART=${CMAKE_SOURCE_DIR}/testdata/tic80-top50/01_8_bit_panda.tic
+                -DOUTPUT=${CMAKE_CURRENT_BINARY_DIR}/player-vram-crc-fast-forward.txt
+                -DEXPECTED_CRC_FRAMES=160
+                -P ${CMAKE_SOURCE_DIR}/tests/player_vram_crc_test.cmake)
+        set_tests_properties(player-vram-crc-fast-forward PROPERTIES TIMEOUT 5)
+    endif()
 endif()

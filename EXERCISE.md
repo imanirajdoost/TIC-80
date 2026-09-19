@@ -53,7 +53,7 @@ Example command to quit after 100 frames : `player-sdl.exe path\to\your-cart.tic
 player-sdl now accepts --vram-crc <output.txt>. It skips the first 200 frames.
 This was a little more complicated, I iterated with AI to understand what can be done.
 
-## Exercise 6: automated one-minute game sweep
+## Exercise 6
 
 Code for build:
 `cmake --build build-dummy --target player-sdl --parallel 4`
@@ -76,3 +76,9 @@ VRAM checksum files
 stdout/stderr logs
 
 The game passes tests when all checksum frames pass (200 frames of startup is not counted).
+
+## Exercise 7
+
+Executed tests in headless mode. Instead of rendering each frame, I advance the time headlessly, so there is no SDL delay.
+The tests run about 10 times faster now.
+The command that does this is `--vram-crc`, same as last exercise.
